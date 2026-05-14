@@ -20,10 +20,12 @@ database:
 probe:
   interval_seconds: 5
   timeout_seconds: 3
-  # privileged=true uses raw ICMP sockets (needs CAP_NET_RAW or root).
-  # privileged=false uses unprivileged UDP echo (needs the right sysctl on
-  # Linux: net.ipv4.ping_group_range covering the running user's gid).
-  privileged: true
+  # privileged=false uses unprivileged UDP echo. The running user's primary
+  # group must be inside net.ipv4.ping_group_range — on most distros this is
+  # already wide open (0 2147483647). Set privileged=true only if your
+  # kernel/sysctl forbids it and you can install with CAP_NET_RAW (see the
+  # ping-lens-raw.service unit in deploy/).
+  privileged: false
 
 flush:
   interval_minutes: 30
@@ -42,7 +44,9 @@ network:
   isp_first_hop: auto
 
 http:
-  listen: 0.0.0.0:8080
+  # Bind localhost-only by default. Front this with a reverse proxy + auth
+  # if you want LAN/Internet exposure.
+  listen: 127.0.0.1:8080
 
 targets:
   cloudflare_dns:

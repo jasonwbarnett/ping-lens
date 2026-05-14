@@ -1,7 +1,11 @@
 [Unit]
-Description=ping-lens network monitoring agent
+Description=ping-lens network monitoring agent (raw ICMP)
 After=network-online.target
 Wants=network-online.target
+
+# Use this unit instead of ping-lens.service ONLY if your kernel forbids
+# unprivileged ICMP (set probe.privileged=true in config.yaml to match).
+# Otherwise prefer ping-lens.service, which runs without CAP_NET_RAW.
 
 [Service]
 ExecStart=/usr/local/bin/ping-lens --config /etc/ping-lens/config.yaml
@@ -12,7 +16,12 @@ RestartSec=5
 User=ping-lens
 Group=ping-lens
 
-# Hardening
+# Raw ICMP capability
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+# Hardening (same set as the unprivileged unit, minus MemoryDenyWriteExecute
+# which can conflict with some Go runtime allocators on older kernels).
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -23,7 +32,6 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077

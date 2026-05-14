@@ -283,7 +283,7 @@ func pickBestWinner(sources []*grade.SourceStats, perTarget []grade.PerTargetSta
 
 func httpError(w http.ResponseWriter, label string, err error) {
 	log.Printf("%s: %v", label, err)
-	http.Error(w, fmt.Sprintf("%s: %v", label, err), http.StatusInternalServerError)
+	http.Error(w, "internal server error", http.StatusInternalServerError)
 }
 
 // ----- chart series ---------------------------------------------------------

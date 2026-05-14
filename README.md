@@ -29,7 +29,7 @@ $EDITOR /etc/ping-lens/config.yaml
 # 3. Provide the database URL
 echo 'PING_LENS_DATABASE_URL=postgres://...' > /etc/ping-lens/ping-lens.env
 
-# 4. Install systemd unit
+# 4. Install systemd unit (unprivileged by default)
 sudo install -m 0644 deploy/ping-lens.service /etc/systemd/system/
 sudo useradd -r -s /usr/sbin/nologin ping-lens || true
 sudo install -d -o ping-lens -g ping-lens /var/lib/ping-lens/spool
@@ -37,7 +37,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ping-lens
 ```
 
-The dashboard then lives at `http://<host>:8080/`.
+The dashboard lives at `http://127.0.0.1:8080/` by default. Front it with a
+reverse proxy + auth before exposing it on the LAN.
+
+> Need raw ICMP because your kernel forbids unprivileged echo? Install
+> `deploy/ping-lens-raw.service` instead and set `probe.privileged: true` in
+> the config. That unit grants `CAP_NET_RAW`; the default unit does not.
 
 ## Architecture
 
@@ -118,11 +123,18 @@ Add `?window=1h|24h|7d|30d|evening_peak` to override the default 7-day view.
 
 ## ICMP privileges
 
-Raw ICMP requires either root or `CAP_NET_RAW`. The provided systemd unit
-grants the capability via `AmbientCapabilities`. If you cannot grant raw
-sockets, set `probe.privileged: false` in the config and configure
-`net.ipv4.ping_group_range` so unprivileged ICMP via UDP is allowed for the
-service user.
+ping-lens defaults to unprivileged ICMP-over-UDP (`probe.privileged: false`)
+and a systemd unit (`deploy/ping-lens.service`) that does **not** grant
+`CAP_NET_RAW`. This works on any kernel where `net.ipv4.ping_group_range`
+covers the service user's primary gid — true on most modern distros out of
+the box.
+
+If your kernel forbids unprivileged echo, switch to the opt-in path:
+
+1. Set `probe.privileged: true` in `config.yaml`.
+2. Install `deploy/ping-lens-raw.service` instead of the default unit. That
+   unit adds `AmbientCapabilities=CAP_NET_RAW` and
+   `CapabilityBoundingSet=CAP_NET_RAW`.
 
 ## Development
 
