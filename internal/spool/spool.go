@@ -6,7 +6,6 @@
 package spool
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,7 +27,6 @@ type Spool struct {
 
 	mu      sync.Mutex
 	f       *os.File
-	w       *bufio.Writer
 	path    string
 	enc     *json.Encoder
 	rotated bool
@@ -54,8 +52,7 @@ func (s *Spool) openCurrent() error {
 		return fmt.Errorf("open spool: %w", err)
 	}
 	s.f = f
-	s.w = bufio.NewWriterSize(f, 64*1024)
-	s.enc = json.NewEncoder(s.w)
+	s.enc = json.NewEncoder(f)
 	s.path = p
 	return nil
 }
@@ -82,9 +79,6 @@ func (s *Spool) Rotate() (string, error) {
 	if s.f == nil {
 		return "", nil
 	}
-	if err := s.w.Flush(); err != nil {
-		return "", err
-	}
 	if err := s.f.Sync(); err != nil {
 		return "", err
 	}
@@ -92,7 +86,7 @@ func (s *Spool) Rotate() (string, error) {
 	if err := s.f.Close(); err != nil {
 		return "", err
 	}
-	s.f, s.w, s.enc, s.path = nil, nil, nil, ""
+	s.f, s.enc, s.path = nil, nil, ""
 
 	info, statErr := os.Stat(old)
 	if statErr == nil && info.Size() == 0 {
@@ -140,11 +134,8 @@ func (s *Spool) Close() error {
 	if s.f == nil {
 		return nil
 	}
-	if err := s.w.Flush(); err != nil {
-		return err
-	}
 	err := s.f.Close()
-	s.f, s.w, s.enc = nil, nil, nil
+	s.f, s.enc = nil, nil
 	return err
 }
 
