@@ -1,0 +1,83 @@
+# ping-lens example configuration. Copy to /etc/ping-lens/config.yaml and edit.
+
+# Unique name for this probe source. Used as a primary key dimension.
+source: quantum_pi
+
+# auto = single_isp when there is one source, multi_isp when there are >1.
+mode: auto
+
+isp:
+  name: Quantum Fiber
+  plan: 1 Gig
+  connection_type: fiber
+  location_label: Highlands Ranch home
+
+database:
+  # Either set url directly, or set url_env to the name of an environment
+  # variable holding the Neon connection string.
+  url_env: PING_LENS_DATABASE_URL
+
+probe:
+  interval_seconds: 5
+  timeout_seconds: 3
+  # privileged=true uses raw ICMP sockets (needs CAP_NET_RAW or root).
+  # privileged=false uses unprivileged UDP echo (needs the right sysctl on
+  # Linux: net.ipv4.ping_group_range covering the running user's gid).
+  privileged: true
+
+flush:
+  interval_minutes: 30
+  spool_dir: /var/lib/ping-lens/spool
+
+rollup:
+  window_minutes: 30
+
+retention:
+  raw_days: 14
+  rollup_days: 365
+  spool_hours: 24
+
+network:
+  local_gateway: 192.168.1.1
+  isp_first_hop: auto
+
+http:
+  listen: 0.0.0.0:8080
+
+targets:
+  cloudflare_dns:
+    address: 1.1.1.1
+    group: dns
+  google_dns:
+    address: 8.8.8.8
+    group: dns
+  quad9_dns:
+    address: 9.9.9.9
+    group: dns
+  github:
+    address: github.com
+    group: work_tools
+  google:
+    address: google.com
+    group: big_tech
+  slack:
+    address: slack.com
+    group: work_tools
+
+# Optional tuning. Leave commented to use the built-in defaults.
+# thresholds:
+#   loss_pct:
+#     excellent: 0.01
+#     good:      0.05
+#     fair:      0.25
+#     poor:      1.00
+#   p95_ms:
+#     excellent: 25
+#     good:      50
+#     fair:      100
+#     poor:      200
+#   p99_ms:
+#     excellent: 75
+#     good:      150
+#     fair:      300
+#     poor:      750

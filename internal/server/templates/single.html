@@ -1,0 +1,109 @@
+{{define "content"}}
+<div class="controls">
+  <form method="get" action="/">
+    <label class="muted" for="window">Window:</label>
+    <select id="window" name="window" onchange="this.form.submit()">
+      {{range .WindowOptions}}<option value="{{.Key}}" {{if eq .Key $.WindowKey}}selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">{{.Stats.ISPName}}{{if not .Stats.ISPName}}{{.Stats.Source}}{{end}} benchmark</h2>
+  <div class="muted" style="margin-bottom:14px;">source: <code>{{.Stats.Source}}</code></div>
+  <div class="grid cols-4">
+    <div class="stat"><div class="label">Overall grade</div><div class="value"><span class="pill pill-{{.Overall}}">{{.Overall}}</span></div></div>
+    <div class="stat"><div class="label">Confidence</div><div class="value"><span class="pill pill-{{.Confidence}}">{{.Confidence}}</span></div></div>
+    <div class="stat"><div class="label">Samples</div><div class="value">{{fmtInt .Stats.Samples}}</div></div>
+    <div class="stat"><div class="label">Monitored</div><div class="value">{{fmtDays .Stats.Days}}</div></div>
+  </div>
+</div>
+
+<div class="grid cols-4">
+  <div class="stat"><div class="label">Packet loss</div><div class="value">{{fmtPct .Stats.LossPct}} <span class="pill pill-{{index .Reasons "loss"}}">{{index .Reasons "loss"}}</span></div></div>
+  <div class="stat"><div class="label">p50 latency</div><div class="value">{{fmtMS .Stats.P50MS}}</div></div>
+  <div class="stat"><div class="label">p95 latency</div><div class="value">{{fmtMS .Stats.P95MS}} <span class="pill pill-{{index .Reasons "p95_latency"}}">{{index .Reasons "p95_latency"}}</span></div></div>
+  <div class="stat"><div class="label">p99 latency</div><div class="value">{{fmtMS .Stats.P99MS}} <span class="pill pill-{{index .Reasons "p99_latency"}}">{{index .Reasons "p99_latency"}}</span></div></div>
+  <div class="stat"><div class="label">Full outages</div><div class="value">{{.Stats.OutageCount}} <span class="pill pill-{{index .Reasons "outages"}}">{{index .Reasons "outages"}}</span></div></div>
+  <div class="stat"><div class="label">Longest outage</div><div class="value">{{fmtDur .Stats.LongestOutage}}</div></div>
+  <div class="stat"><div class="label">DNS failure rate</div><div class="value">{{fmtPct .Stats.DNSFailurePct}}</div></div>
+  <div class="stat"><div class="label">Ping failures</div><div class="value">{{fmtInt .Stats.PingFailures}}</div></div>
+</div>
+
+<div class="panel">
+  <h3>Latency over time</h3>
+  <canvas id="latencyChart" class="chart"></canvas>
+</div>
+
+<div class="panel">
+  <h3>Packet loss over time</h3>
+  <canvas id="lossChart" class="chart"></canvas>
+</div>
+
+<div class="panel">
+  <h3>Per-target breakdown</h3>
+  <table>
+    <thead><tr><th>Target</th><th>Group</th><th>Samples</th><th>Loss</th><th>p50</th><th>p90</th><th>p95</th><th>p99</th><th>Outages</th></tr></thead>
+    <tbody>
+      {{range .PerTarget}}
+      <tr>
+        <td class="nowrap">{{.Target}}</td>
+        <td class="muted">{{.Group}}</td>
+        <td>{{fmtInt .Samples}}</td>
+        <td>{{fmtPct .LossPct}}</td>
+        <td>{{fmtMS .P50MS}}</td>
+        <td>{{fmtMS .P90MS}}</td>
+        <td>{{fmtMS .P95MS}}</td>
+        <td>{{fmtMS .P99MS}}</td>
+        <td>{{.OutageCount}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{if .Outages}}
+<div class="panel">
+  <h3>Outage timeline</h3>
+  <table>
+    <thead><tr><th>Started</th><th>Duration</th><th>Type</th><th>Affected targets</th></tr></thead>
+    <tbody>
+      {{range .Outages}}
+      <tr>
+        <td class="nowrap">{{fmtTime .StartedAt}}</td>
+        <td>{{fmtOutageDur .DurationSeconds}}</td>
+        <td>{{.OutageType}}</td>
+        <td class="muted">{{join .AffectedTargets ", "}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+<script>
+(function() {
+  const latencySeries = {{.LatencyChartJSON}};
+  const lossSeries = {{.LossChartJSON}};
+  const opts = {
+    responsive: true, maintainAspectRatio: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: { legend: { labels: { color: '#8a94a7' } } },
+    scales: {
+      x: { ticks: { color: '#8a94a7' }, grid: { color: '#2a3142' } },
+      y: { ticks: { color: '#8a94a7' }, grid: { color: '#2a3142' } }
+    }
+  };
+  new Chart(document.getElementById('latencyChart'), {
+    type: 'line',
+    data: latencySeries,
+    options: opts
+  });
+  new Chart(document.getElementById('lossChart'), {
+    type: 'line',
+    data: lossSeries,
+    options: opts
+  });
+})();
+</script>
+{{end}}

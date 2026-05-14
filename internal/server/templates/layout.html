@@ -1,0 +1,96 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · ping-lens</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #181c25;
+    --panel2: #1f2533;
+    --text: #e7eaf0;
+    --muted: #8a94a7;
+    --accent: #4ea8de;
+    --good: #57c98f;
+    --excellent: #2ecc71;
+    --fair: #f4c430;
+    --poor: #e67e22;
+    --bad: #e74c3c;
+    --border: #2a3142;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 24px;
+    background: var(--panel);
+  }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.4px; }
+  header nav a { color: var(--muted); margin-right: 14px; text-decoration: none; font-size: 13px; }
+  header nav a:hover, header nav a.active { color: var(--accent); }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  h2 { font-size: 18px; margin: 24px 0 12px; }
+  h3 { font-size: 15px; margin: 18px 0 10px; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 18px; }
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .stat { background: var(--panel2); border-radius: 6px; padding: 14px 16px; }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.3px; font-size: 11px; }
+  tr:last-child td { border-bottom: none; }
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .pill-excellent { background: rgba(46,204,113,.15); color: var(--excellent); }
+  .pill-good      { background: rgba(87,201,143,.15); color: var(--good); }
+  .pill-fair      { background: rgba(244,196,48,.15); color: var(--fair); }
+  .pill-poor      { background: rgba(230,126,34,.15); color: var(--poor); }
+  .pill-bad       { background: rgba(231,76,60,.15);  color: var(--bad); }
+  .pill-low    { background: rgba(138,148,167,.15); color: var(--muted); }
+  .pill-medium { background: rgba(78,168,222,.15);  color: var(--accent); }
+  .pill-high   { background: rgba(87,201,143,.15);  color: var(--good); }
+  .muted { color: var(--muted); }
+  .chart { width: 100%; height: 240px; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+  .controls select, .controls input {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 6px 10px; font-size: 13px;
+  }
+  .winner {
+    border-left: 4px solid var(--accent); padding-left: 14px;
+  }
+  .reason { margin: 4px 0; color: var(--muted); }
+  footer { padding: 24px; text-align: center; color: var(--muted); font-size: 12px; }
+  .nowrap { white-space: nowrap; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<header>
+  <h1>ping-lens</h1>
+  <nav>
+    <a href="/" {{if eq .Active "home"}}class="active"{{end}}>Dashboard</a>
+    {{if .ShowReport}}<a href="/report?source={{.ReportSource}}" {{if eq .Active "report"}}class="active"{{end}}>Evidence report</a>{{end}}
+    <a href="/healthz" {{if eq .Active "health"}}class="active"{{end}}>Health</a>
+  </nav>
+  <div style="margin-left:auto;" class="muted">window: {{.WindowLabel}}</div>
+</header>
+<main>
+{{template "content" .}}
+</main>
+<footer>ping-lens · generated {{.GeneratedAt}}</footer>
+</body>
+</html>
+{{end}}
