@@ -136,6 +136,26 @@ func run(configPath string) error {
 		}
 	}()
 
+	// Periodic spool flush: pushes the in-memory bufio buffer to disk so
+	// `tail -F` shows progress and crash loss is bounded by time, not
+	// buffer size.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(cfg.SpoolFlushInterval())
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := sp.Flush(); err != nil {
+					log.Printf("spool flush: %v", err)
+				}
+			}
+		}
+	}()
+
 	// --- HTTP server --------------------------------------------------------
 	srv, err := server.New(cfg, store)
 	if err != nil {

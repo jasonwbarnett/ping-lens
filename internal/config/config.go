@@ -32,8 +32,9 @@ type Config struct {
 	} `yaml:"probe"`
 
 	Flush struct {
-		IntervalMinutes int    `yaml:"interval_minutes"`
-		SpoolDir        string `yaml:"spool_dir"`
+		IntervalMinutes   int    `yaml:"interval_minutes"`
+		SpoolDir          string `yaml:"spool_dir"`
+		SpoolFlushSeconds int    `yaml:"spool_flush_seconds"`
 	} `yaml:"flush"`
 
 	Rollup struct {
@@ -94,6 +95,10 @@ func (c *Config) FlushInterval() time.Duration {
 	return time.Duration(c.Flush.IntervalMinutes) * time.Minute
 }
 
+func (c *Config) SpoolFlushInterval() time.Duration {
+	return time.Duration(c.Flush.SpoolFlushSeconds) * time.Second
+}
+
 func (c *Config) RollupWindow() time.Duration {
 	return time.Duration(c.Rollup.WindowMinutes) * time.Minute
 }
@@ -142,6 +147,9 @@ func applyDefaults(c *Config) {
 	}
 	if c.Flush.SpoolDir == "" {
 		c.Flush.SpoolDir = "/var/lib/ping-lens/spool"
+	}
+	if c.Flush.SpoolFlushSeconds == 0 {
+		c.Flush.SpoolFlushSeconds = 60
 	}
 	if c.Rollup.WindowMinutes == 0 {
 		c.Rollup.WindowMinutes = 30

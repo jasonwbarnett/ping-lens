@@ -28,8 +28,14 @@ probe:
   privileged: false
 
 flush:
+  # How often the spool is rotated and shipped to Postgres.
   interval_minutes: 30
   spool_dir: /var/lib/ping-lens/spool
+  # How often the in-memory spool buffer is flushed to disk. Bounds crash
+  # loss to this many seconds and lets `tail -F` show progress without
+  # waiting for the buffer to fill or the next interval_minutes tick.
+  # Send SIGUSR1 to the process for an immediate spool rotate + DB ship.
+  spool_flush_seconds: 60
 
 rollup:
   window_minutes: 30

@@ -81,6 +81,10 @@ embedded in the binary; it is applied (idempotent) on every start.
 
 - The probe loop never blocks on database writes. Samples are appended to a
   rotating NDJSON spool file in `flush.spool_dir`.
+- Spool writes pass through a small in-memory buffer that is flushed to disk
+  every `flush.spool_flush_seconds` (default 60). This bounds crash loss to
+  one flush window and means `tail -F` on the current spool file shows
+  progress within that window.
 - Every `flush.interval_minutes` the spool is rotated and consumed via
   `COPY FROM`. Successful files are renamed to `*.done.ndjson` and removed
   after `retention.spool_hours`.
@@ -120,6 +124,25 @@ size of the lead.
 | `/healthz`  | JSON liveness + config summary             |
 
 Add `?window=1h|24h|7d|30d|evening_peak` to override the default 7-day view.
+
+## Signals
+
+| Signal           | Effect                                                       |
+|------------------|--------------------------------------------------------------|
+| `SIGINT`/`SIGTERM` | Graceful shutdown: final flush of buffer, rollups, outages |
+| `SIGUSR1`        | Force an immediate spool rotate + ship to Postgres           |
+
+`SIGUSR1` is the fast path when you want to confirm probes are reaching the
+dashboard without waiting for the next `flush.interval_minutes` tick:
+
+```sh
+sudo systemctl kill -s SIGUSR1 ping-lens
+# or
+kill -USR1 $(pgrep -f ping-lens)
+```
+
+The agent logs `flush: manual trigger` on receipt; reload the dashboard to
+see new buckets.
 
 ## ICMP privileges
 

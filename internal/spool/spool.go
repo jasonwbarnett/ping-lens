@@ -6,6 +6,7 @@
 package spool
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ type Spool struct {
 
 	mu      sync.Mutex
 	f       *os.File
+	w       *bufio.Writer
 	path    string
 	enc     *json.Encoder
 	rotated bool
@@ -52,7 +54,8 @@ func (s *Spool) openCurrent() error {
 		return fmt.Errorf("open spool: %w", err)
 	}
 	s.f = f
-	s.enc = json.NewEncoder(f)
+	s.w = bufio.NewWriterSize(f, 64*1024)
+	s.enc = json.NewEncoder(s.w)
 	s.path = p
 	return nil
 }
@@ -70,6 +73,18 @@ func (s *Spool) Append(samp sample.Sample) error {
 	return nil
 }
 
+// Flush pushes any buffered bytes to the underlying file. Bounds the
+// data-loss window on crash and lets `tail -F` see new samples without
+// waiting for the buffer to fill or for Rotate.
+func (s *Spool) Flush() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.w == nil {
+		return nil
+	}
+	return s.w.Flush()
+}
+
 // Rotate finalises the current file, renames it to *.ready.ndjson, and
 // opens a fresh current file. Returns the path of the ready file (empty
 // string if the current file held no bytes — in which case it is deleted).
@@ -79,6 +94,9 @@ func (s *Spool) Rotate() (string, error) {
 	if s.f == nil {
 		return "", nil
 	}
+	if err := s.w.Flush(); err != nil {
+		return "", err
+	}
 	if err := s.f.Sync(); err != nil {
 		return "", err
 	}
@@ -86,7 +104,7 @@ func (s *Spool) Rotate() (string, error) {
 	if err := s.f.Close(); err != nil {
 		return "", err
 	}
-	s.f, s.enc, s.path = nil, nil, ""
+	s.f, s.w, s.enc, s.path = nil, nil, nil, ""
 
 	info, statErr := os.Stat(old)
 	if statErr == nil && info.Size() == 0 {
@@ -134,8 +152,11 @@ func (s *Spool) Close() error {
 	if s.f == nil {
 		return nil
 	}
+	if err := s.w.Flush(); err != nil {
+		return err
+	}
 	err := s.f.Close()
-	s.f, s.enc = nil, nil
+	s.f, s.w, s.enc = nil, nil, nil
 	return err
 }
 
