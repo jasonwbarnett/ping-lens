@@ -61,7 +61,8 @@
   .pill-medium { background: rgba(78,168,222,.15);  color: var(--accent); }
   .pill-high   { background: rgba(87,201,143,.15);  color: var(--good); }
   .muted { color: var(--muted); }
-  .chart { width: 100%; height: 240px; }
+  .chart-wrap { position: relative; width: 100%; height: 240px; }
+  .chart-wrap canvas { display: block; }
   .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
   .controls select, .controls input {
     background: var(--panel2); color: var(--text);
