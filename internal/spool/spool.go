@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,15 +36,49 @@ type Spool struct {
 }
 
 // Open initialises the spool directory and starts a fresh current file.
+//
+// Any pre-existing *.ndjson files left behind by a previous process (current
+// files that were never rotated) are renamed to *.ready.ndjson so the next
+// flush picks them up. Without this, restarts strand samples on disk.
 func Open(dir string) (*Spool, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir spool: %w", err)
+	}
+	if err := promoteOrphans(dir); err != nil {
+		return nil, fmt.Errorf("promote orphans: %w", err)
 	}
 	s := &Spool{dir: dir}
 	if err := s.openCurrent(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// promoteOrphans renames any *.ndjson files (excluding *.ready.ndjson and
+// *.done.ndjson) to *.ready.ndjson so they are processed on the next flush.
+func promoteOrphans(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, currentExt) {
+			continue
+		}
+		if strings.HasSuffix(name, readyExt) || strings.HasSuffix(name, ".done.ndjson") {
+			continue
+		}
+		old := filepath.Join(dir, name)
+		ready := old[:len(old)-len(currentExt)] + readyExt
+		if err := os.Rename(old, ready); err != nil {
+			return fmt.Errorf("rename %s: %w", old, err)
+		}
+	}
+	return nil
 }
 
 func (s *Spool) openCurrent() error {

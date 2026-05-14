@@ -94,8 +94,16 @@ func (s *Store) InsertSamples(ctx context.Context, rows []sample.Sample) (int64,
 	return s.pool.CopyFrom(ctx, pgx.Identifier{"ping_samples"}, cols, src)
 }
 
-// UpsertRollups writes rollup rows. ON CONFLICT keeps the latest values so a
-// re-run after a partial flush is safe.
+// UpsertRollups writes rollup rows additively: when a (bucket, target) row
+// already exists, counters are summed and derived fields recomputed against
+// the new totals. This makes the operation safe across:
+//   - shutdown FlushAll for an open bucket
+//   - restart, fresh accumulator, eventual close-flush of the same bucket
+//   - any future partial-flush scenario
+//
+// Percentile fields are blended sample-weighted. This is an approximation —
+// true percentiles can't be recovered from per-segment percentiles — but
+// stays close to truth for normally-shaped latency distributions.
 func (s *Store) UpsertRollups(ctx context.Context, rows []rollup.Row) error {
 	if len(rows) == 0 {
 		return nil
@@ -108,20 +116,33 @@ INSERT INTO ping_rollups
 VALUES
   ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 ON CONFLICT (bucket, window_seconds, source, target) DO UPDATE SET
-  isp_name = EXCLUDED.isp_name,
-  target_group = EXCLUDED.target_group,
-  samples = EXCLUDED.samples,
-  ping_failures = EXCLUDED.ping_failures,
-  dns_failures = EXCLUDED.dns_failures,
-  loss_pct = EXCLUDED.loss_pct,
-  dns_failure_pct = EXCLUDED.dns_failure_pct,
-  p50_ms = EXCLUDED.p50_ms,
-  p90_ms = EXCLUDED.p90_ms,
-  p95_ms = EXCLUDED.p95_ms,
-  p99_ms = EXCLUDED.p99_ms,
-  min_ms = EXCLUDED.min_ms,
-  max_ms = EXCLUDED.max_ms,
-  avg_ms = EXCLUDED.avg_ms
+  isp_name      = COALESCE(EXCLUDED.isp_name,     ping_rollups.isp_name),
+  target_group  = COALESCE(EXCLUDED.target_group, ping_rollups.target_group),
+  samples       = ping_rollups.samples       + EXCLUDED.samples,
+  ping_failures = ping_rollups.ping_failures + EXCLUDED.ping_failures,
+  dns_failures  = ping_rollups.dns_failures  + EXCLUDED.dns_failures,
+  loss_pct = CASE WHEN (ping_rollups.samples + EXCLUDED.samples) > 0
+                  THEN 100.0 * (ping_rollups.ping_failures + EXCLUDED.ping_failures)
+                       / (ping_rollups.samples + EXCLUDED.samples)
+                  ELSE 0 END,
+  dns_failure_pct = CASE WHEN (ping_rollups.samples + EXCLUDED.samples) > 0
+                  THEN 100.0 * (ping_rollups.dns_failures + EXCLUDED.dns_failures)
+                       / (ping_rollups.samples + EXCLUDED.samples)
+                  ELSE 0 END,
+  p50_ms = (ping_rollups.p50_ms * ping_rollups.samples + EXCLUDED.p50_ms * EXCLUDED.samples)
+           / NULLIF(ping_rollups.samples + EXCLUDED.samples, 0),
+  p90_ms = (ping_rollups.p90_ms * ping_rollups.samples + EXCLUDED.p90_ms * EXCLUDED.samples)
+           / NULLIF(ping_rollups.samples + EXCLUDED.samples, 0),
+  p95_ms = (ping_rollups.p95_ms * ping_rollups.samples + EXCLUDED.p95_ms * EXCLUDED.samples)
+           / NULLIF(ping_rollups.samples + EXCLUDED.samples, 0),
+  p99_ms = (ping_rollups.p99_ms * ping_rollups.samples + EXCLUDED.p99_ms * EXCLUDED.samples)
+           / NULLIF(ping_rollups.samples + EXCLUDED.samples, 0),
+  min_ms = CASE WHEN ping_rollups.min_ms = 0 THEN EXCLUDED.min_ms
+                WHEN EXCLUDED.min_ms = 0      THEN ping_rollups.min_ms
+                ELSE LEAST(ping_rollups.min_ms, EXCLUDED.min_ms) END,
+  max_ms = GREATEST(ping_rollups.max_ms, EXCLUDED.max_ms),
+  avg_ms = (ping_rollups.avg_ms * ping_rollups.samples + EXCLUDED.avg_ms * EXCLUDED.samples)
+           / NULLIF(ping_rollups.samples + EXCLUDED.samples, 0)
 `
 	batch := &pgx.Batch{}
 	for _, r := range rows {
