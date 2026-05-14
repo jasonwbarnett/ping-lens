@@ -54,10 +54,6 @@ func FirstHopBeyondGateway(ctx context.Context, anchor string, timeout time.Dura
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	tv := unix.NsecToTimeval(time.Until(deadline).Nanoseconds())
-	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv); err != nil {
-		return "", fmt.Errorf("set SO_RCVTIMEO: %w", err)
-	}
 
 	// Port 33434 is traceroute's traditional starting port — chosen to
 	// almost certainly be unbound on the destination so a UDP probe
@@ -70,12 +66,28 @@ func FirstHopBeyondGateway(ctx context.Context, anchor string, timeout time.Dura
 		return "", fmt.Errorf("sendto: %w", err)
 	}
 
+	// MSG_ERRQUEUE reads are non-blocking, so SO_RCVTIMEO doesn't apply.
+	// Wait for the kernel to signal that an error is queued via poll(2)
+	// with POLLERR.
+	remainingMs := int(time.Until(deadline) / time.Millisecond)
+	if remainingMs <= 0 {
+		return "", fmt.Errorf("deadline already passed")
+	}
+	pfd := []unix.PollFd{{Fd: int32(fd), Events: unix.POLLERR}}
+	n, err := unix.Poll(pfd, remainingMs)
+	if err != nil {
+		return "", fmt.Errorf("poll: %w", err)
+	}
+	if n == 0 {
+		return "", fmt.Errorf("no ICMP response within %v", timeout)
+	}
+
 	buf := make([]byte, 1500)
 	oob := make([]byte, 1500)
 	_, oobn, _, _, err := unix.Recvmsg(fd, buf, oob, unix.MSG_ERRQUEUE)
 	if err != nil {
 		if errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EWOULDBLOCK) {
-			return "", fmt.Errorf("no ICMP response within %v", timeout)
+			return "", fmt.Errorf("error queue empty after POLLERR (race?)")
 		}
 		return "", fmt.Errorf("recvmsg(MSG_ERRQUEUE): %w", err)
 	}
