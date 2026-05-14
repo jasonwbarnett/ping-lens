@@ -1,6 +1,6 @@
 BINARY := ping-lens
 PKG    := ./cmd/ping-lens
-VERSION ?= dev
+VERSION ?= $(shell git describe --always --dirty --tags 2>/dev/null || echo dev)
 
 GOFLAGS := -trimpath
 LDFLAGS := -s -w -X main.version=$(VERSION)

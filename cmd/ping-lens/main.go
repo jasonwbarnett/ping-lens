@@ -29,9 +29,19 @@ import (
 	"github.com/jasonwbarnett/ping-lens/internal/spool"
 )
 
+// version is set at build time via -ldflags "-X main.version=...".
+// Defaults to "dev" for `go run` / unflagged builds.
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "/etc/ping-lens/config.yaml", "path to YAML config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	log.SetFlags(log.LstdFlags | log.LUTC)
 
@@ -169,8 +179,8 @@ func run(configPath string) error {
 		}
 	}()
 
-	log.Printf("ping-lens started: source=%s isp=%q targets=%d interval=%s flush=%s",
-		cfg.Source, cfg.ISP.Name, len(targets), cfg.ProbeInterval(), cfg.FlushInterval())
+	log.Printf("ping-lens %s started: source=%s isp=%q targets=%d interval=%s flush=%s",
+		version, cfg.Source, cfg.ISP.Name, len(targets), cfg.ProbeInterval(), cfg.FlushInterval())
 
 	<-ctx.Done()
 	log.Printf("shutting down…")
