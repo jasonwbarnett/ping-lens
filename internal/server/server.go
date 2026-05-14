@@ -109,7 +109,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		WindowKey:     winKey,
 		WindowLabel:   winLabel,
 		WindowOptions: windowOptions(),
-		GeneratedAt:   time.Now().UTC().Format("2006-01-02 15:04 UTC"),
+		GeneratedAt:   time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 	}
 	if len(sources) == 1 {
 		base.ShowReport = true
@@ -235,7 +235,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		WindowKey:     winKey,
 		WindowLabel:   winLabel,
 		WindowOptions: windowOptions(),
-		GeneratedAt:   time.Now().UTC().Format("2006-01-02 15:04 UTC"),
+		GeneratedAt:   time.Now().UTC().Format("2006-01-02 15:04:05 UTC"),
 		ShowReport:    true,
 		ReportSource:  src,
 	}

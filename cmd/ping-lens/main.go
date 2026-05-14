@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"os/signal"
 	"strings"
 	"sync"
@@ -50,6 +51,13 @@ func run(configPath string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// SIGUSR1 forces an immediate flush to Postgres. Useful for debugging
+	// and to confirm probes are reaching the dashboard without waiting for
+	// the next flush tick.
+	flushSig := make(chan os.Signal, 1)
+	signal.Notify(flushSig, syscall.SIGUSR1)
+	defer signal.Stop(flushSig)
 
 	// --- Storage ------------------------------------------------------------
 	store, err := db.Open(ctx, cfg.Database.URL)
@@ -112,6 +120,20 @@ func run(configPath string) error {
 	go func() {
 		defer wg.Done()
 		flusher.Run(ctx, cfg.FlushInterval())
+	}()
+
+	// SIGUSR1 → manual flush. Runs until ctx is done.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-flushSig:
+				flusher.Trigger()
+			}
+		}
 	}()
 
 	// --- HTTP server --------------------------------------------------------

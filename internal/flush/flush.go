@@ -38,6 +38,8 @@ type Flusher struct {
 	source     string
 	spoolHours int
 
+	trigger chan struct{}
+
 	mu      sync.Mutex
 	pending []outage.Event
 }
@@ -52,6 +54,17 @@ func New(store *db.Store, sp Spool, rollups *rollup.Accumulator, source string, 
 		rollups:    rollups,
 		source:     source,
 		spoolHours: spoolHours,
+		trigger:    make(chan struct{}, 1),
+	}
+}
+
+// Trigger requests an out-of-band flush cycle. Coalesces — multiple calls
+// before the next cycle runs collapse into one. Safe from any goroutine,
+// including signal handlers.
+func (f *Flusher) Trigger() {
+	select {
+	case f.trigger <- struct{}{}:
+	default:
 	}
 }
 
@@ -74,7 +87,8 @@ func (f *Flusher) drainOutages() []outage.Event {
 	return out
 }
 
-// Run loops until ctx is done, flushing on each tick.
+// Run loops until ctx is done, flushing on each tick or whenever Trigger
+// is called.
 func (f *Flusher) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -84,6 +98,11 @@ func (f *Flusher) Run(ctx context.Context, interval time.Duration) {
 			f.finalFlush(context.Background())
 			return
 		case <-t.C:
+			if err := f.Once(ctx); err != nil {
+				log.Printf("flush error: %v", err)
+			}
+		case <-f.trigger:
+			log.Printf("flush: manual trigger")
 			if err := f.Once(ctx); err != nil {
 				log.Printf("flush error: %v", err)
 			}
