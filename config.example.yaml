@@ -70,9 +70,12 @@ targets:
   google:
     address: google.com
     group: big_tech
-  slack:
-    address: slack.com
-    group: work_tools
+  cloudflare:
+    address: cloudflare.com
+    group: big_tech
+  wikipedia:
+    address: wikipedia.org
+    group: reference
 
 # Optional tuning. Leave commented to use the built-in defaults.
 # thresholds:
