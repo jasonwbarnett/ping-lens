@@ -4,6 +4,7 @@ package probe
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
 	"strings"
@@ -24,9 +25,13 @@ type Target struct {
 	IsIP    bool
 }
 
-// Targets builds the runtime probe list from a config map.
+// Targets builds the runtime probe list from a config map. Synthetic
+// "local_gateway" and "isp_first_hop" targets are auto-injected when
+// the corresponding network.* setting is non-empty.
 func Targets(cfg *config.Config) []Target {
-	out := make([]Target, 0, len(cfg.Targets))
+	out := make([]Target, 0, len(cfg.Targets)+2)
+	seenAddr := map[string]bool{}
+	seenName := map[string]bool{}
 	for name, t := range cfg.Targets {
 		ip := net.ParseIP(t.Address)
 		out = append(out, Target{
@@ -35,7 +40,53 @@ func Targets(cfg *config.Config) []Target {
 			Group:   t.Group,
 			IsIP:    ip != nil,
 		})
+		seenAddr[t.Address] = true
+		seenName[name] = true
 	}
+	if addr := resolveNetworkTarget("local_gateway", cfg.Network.LocalGateway, DefaultGateway); addr != "" {
+		out = appendNetworkTarget(out, "local_gateway", addr, seenName, seenAddr)
+	}
+	if addr := resolveNetworkTarget("isp_first_hop", cfg.Network.ISPFirstHop, func() (string, error) {
+		return FirstHopBeyondGateway(context.Background(), "1.1.1.1", 5*time.Second)
+	}); addr != "" {
+		out = appendNetworkTarget(out, "isp_first_hop", addr, seenName, seenAddr)
+	}
+	return out
+}
+
+// resolveNetworkTarget interprets the user-facing setting:
+//   - "" / unset       -> skip injection
+//   - "auto"           -> run autoFn; on error, log and skip
+//   - any other string -> treat as a literal address
+func resolveNetworkTarget(label, setting string, autoFn func() (string, error)) string {
+	switch setting {
+	case "":
+		return ""
+	case "auto":
+		addr, err := autoFn()
+		if err != nil {
+			log.Printf("auto-detect %s: %v (skipping)", label, err)
+			return ""
+		}
+		log.Printf("auto-detected %s = %s", label, addr)
+		return addr
+	default:
+		return setting
+	}
+}
+
+func appendNetworkTarget(out []Target, name, addr string, seenName, seenAddr map[string]bool) []Target {
+	if seenName[name] || seenAddr[addr] {
+		return out // user already configured this; don't double-probe
+	}
+	out = append(out, Target{
+		Name:    name,
+		Address: addr,
+		Group:   "network",
+		IsIP:    net.ParseIP(addr) != nil,
+	})
+	seenName[name] = true
+	seenAddr[addr] = true
 	return out
 }
 

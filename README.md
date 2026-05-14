@@ -97,6 +97,35 @@ embedded in the binary; it is applied (idempotent) on every start.
   - all public targets down (LAN gateway up) → `full_isp_outage`
   - hostname DNS fails but IP probes work → `dns_issue`
   - LAN gateway fails → `local_gateway_issue`
+- Single dropped packets do **not** open an outage event by default.
+  `outage.min_consecutive_failures` (default `2`) gates when a target
+  starts counting toward classification. Loss% in `ping_rollups` still
+  reflects every dropped packet regardless of the threshold.
+
+### Auto-injected network targets
+
+Setting `network.local_gateway` or `network.isp_first_hop` adds a synthetic
+probe target so you can tell *where* on the path packets are being dropped:
+
+| Setting               | Value      | Effect                                                     |
+|-----------------------|------------|------------------------------------------------------------|
+| `local_gateway`       | `auto`     | Default route from `/proc/net/route` (Linux)               |
+| `local_gateway`       | `<ip>`     | Probe this address explicitly                              |
+| `isp_first_hop`       | `auto`     | `traceroute -m 3 1.1.1.1`, take hop 2 (requires `traceroute` in PATH) |
+| `isp_first_hop`       | `<ip>`     | Probe this address explicitly                              |
+| either                | `""`/unset | Omit                                                       |
+
+Both are auto-named `local_gateway` / `isp_first_hop` and grouped as
+`network` so they appear together in the per-target table. If you've
+already added a target with the same name or IP, the auto-inject is
+skipped — no double-probing.
+
+When triaging loss in the report, this lets you reason about it directly:
+
+- `local_gateway` losing packets → LAN/router/cable issue
+- `local_gateway` clean, `isp_first_hop` losing → ISP problem
+- both clean, only one public destination losing → that destination (or peering)
+- both clean, all public destinations losing → ISP egress / transit issue
 
 ### Grading
 
