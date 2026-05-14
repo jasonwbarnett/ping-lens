@@ -1,0 +1,7 @@
+{{define "content"}}
+<div class="panel">
+  <h2>No data yet</h2>
+  <p class="muted">The agent is running but no rollups have been flushed yet. Check back after one flush interval (default 30 minutes).</p>
+  <p class="muted">Source: <code>{{.Source}}</code>{{if .ISP}} · ISP: {{.ISP}}{{end}}</p>
+</div>
+{{end}}

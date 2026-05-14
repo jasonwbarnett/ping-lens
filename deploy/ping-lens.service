@@ -1,0 +1,30 @@
+[Unit]
+Description=ping-lens network monitoring agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ping-lens --config /etc/ping-lens/config.yaml
+EnvironmentFile=-/etc/ping-lens/ping-lens.env
+Restart=always
+RestartSec=5
+
+# Privileged ICMP needs CAP_NET_RAW (and the binary must be allowed to
+# inherit it). Comment out if you set probe.privileged=false in config.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+
+# Hardening
+DynamicUser=no
+User=ping-lens
+Group=ping-lens
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/ping-lens
+StateDirectory=ping-lens
+RuntimeDirectory=ping-lens
+
+[Install]
+WantedBy=multi-user.target
