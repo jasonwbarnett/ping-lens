@@ -57,6 +57,7 @@ type Tracker struct {
 	source        string
 	ispName       string
 	localGateway  string
+	minStreak     int // min consecutive-failure ticks before a target counts as failing
 
 	mu       sync.Mutex
 	streaks  map[string]int       // target -> consecutive failures
@@ -65,11 +66,21 @@ type Tracker struct {
 	sink     EventSink
 }
 
-func NewTracker(source, ispName, localGateway string, sink EventSink) *Tracker {
+// NewTracker constructs a Tracker. minStreak is the number of consecutive
+// failed ticks required before a target is considered "failing" for outage
+// classification — single dropped packets below this threshold are
+// reflected in the streak counter and the rollup loss% but do not open an
+// outage event. A value <= 1 disables the threshold (every failed tick
+// counts).
+func NewTracker(source, ispName, localGateway string, minStreak int, sink EventSink) *Tracker {
+	if minStreak < 1 {
+		minStreak = 1
+	}
 	return &Tracker{
 		source:       source,
 		ispName:      ispName,
 		localGateway: localGateway,
+		minStreak:    minStreak,
 		streaks:      map[string]int{},
 		sink:         sink,
 	}
@@ -103,21 +114,25 @@ func (t *Tracker) Observe(tickAt time.Time, samples []sample.Sample) {
 	gatewayObserved := false
 
 	for _, s := range samples {
+		isFailing := false
 		if !s.PingSuccess {
 			t.streaks[s.Target] = t.streaks[s.Target] + 1
-			failed = append(failed, s.Target)
+			if t.streaks[s.Target] >= t.minStreak {
+				isFailing = true
+				failed = append(failed, s.Target)
+			}
 		} else {
 			t.streaks[s.Target] = 0
 		}
 		switch s.TargetType {
 		case "ip":
 			ipTotal++
-			if !s.PingSuccess {
+			if isFailing {
 				ipFailed++
 			}
 		case "hostname":
 			hostTotal++
-			if !s.PingSuccess {
+			if isFailing {
 				hostFailed++
 			}
 			if s.DNSSuccess != nil && !*s.DNSSuccess {
@@ -126,7 +141,7 @@ func (t *Tracker) Observe(tickAt time.Time, samples []sample.Sample) {
 		}
 		if t.localGateway != "" && (s.Target == "local_gateway" || s.TargetIP == t.localGateway) {
 			gatewayObserved = true
-			gatewayUp = s.PingSuccess
+			gatewayUp = !isFailing
 		}
 	}
 	sort.Strings(failed)

@@ -49,6 +49,13 @@ network:
   local_gateway: 192.168.1.1
   isp_first_hop: auto
 
+outage:
+  # Number of consecutive failed ticks before a target counts as "failing"
+  # for outage classification. Single dropped packets still appear in the
+  # rollup loss%, but do not open an outage event. Default 2 — at the
+  # default 5s probe interval, that's 10s of continuous failure.
+  min_consecutive_failures: 2
+
 http:
   # Bind localhost-only by default. Front this with a reverse proxy + auth
   # if you want LAN/Internet exposure.

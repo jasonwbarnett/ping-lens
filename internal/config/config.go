@@ -52,6 +52,13 @@ type Config struct {
 		ISPFirstHop  string `yaml:"isp_first_hop"`
 	} `yaml:"network"`
 
+	Outage struct {
+		// Number of consecutive failed ticks before a target is treated as
+		// "failing" for outage classification. Single dropped packets below
+		// this threshold still count toward loss% but do not open an event.
+		MinConsecutiveFailures int `yaml:"min_consecutive_failures"`
+	} `yaml:"outage"`
+
 	HTTP struct {
 		Listen string `yaml:"listen"`
 	} `yaml:"http"`
@@ -162,6 +169,9 @@ func applyDefaults(c *Config) {
 	}
 	if c.Retention.SpoolHours == 0 {
 		c.Retention.SpoolHours = 24
+	}
+	if c.Outage.MinConsecutiveFailures == 0 {
+		c.Outage.MinConsecutiveFailures = 2
 	}
 	if c.HTTP.Listen == "" {
 		c.HTTP.Listen = "127.0.0.1:8080"

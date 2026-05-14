@@ -81,7 +81,7 @@ func run(configPath string) error {
 	flusher := flush.New(store, sp, rollups, cfg.Source, cfg.Retention.SpoolHours)
 
 	// --- Outage tracker -----------------------------------------------------
-	tracker := outage.NewTracker(cfg.Source, cfg.ISP.Name, cfg.Network.LocalGateway, flusher)
+	tracker := outage.NewTracker(cfg.Source, cfg.ISP.Name, cfg.Network.LocalGateway, cfg.Outage.MinConsecutiveFailures, flusher)
 
 	// --- Probe pipeline -----------------------------------------------------
 	targets := probe.Targets(cfg)
