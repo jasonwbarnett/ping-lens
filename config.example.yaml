@@ -56,7 +56,8 @@ network:
   # First router past your gateway, typically the ISP's edge. Probed each
   # tick so you can tell the difference between "ISP is dropping packets"
   # (first hop loses) and "destination is dropping" (first hop fine).
-  #   "auto"    derive via `traceroute -m 3 1.1.1.1`, take hop 2
+  #   "auto"    one-shot ICMP Echo with TTL=2 to 1.1.1.1; the responding
+  #             router is hop 2. Pure Go, unprivileged.
   #   <ip>      use this address explicitly
   #   ""        omit
   isp_first_hop: auto

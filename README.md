@@ -111,7 +111,7 @@ probe target so you can tell *where* on the path packets are being dropped:
 |-----------------------|------------|------------------------------------------------------------|
 | `local_gateway`       | `auto`     | Default route from `/proc/net/route` (Linux)               |
 | `local_gateway`       | `<ip>`     | Probe this address explicitly                              |
-| `isp_first_hop`       | `auto`     | `traceroute -m 3 1.1.1.1`, take hop 2 (requires `traceroute` in PATH) |
+| `isp_first_hop`       | `auto`     | One-shot ICMP Echo with TTL=2 to 1.1.1.1; the responding router is hop 2. Pure Go, unprivileged (same path as regular probes). |
 | `isp_first_hop`       | `<ip>`     | Probe this address explicitly                              |
 | either                | `""`/unset | Omit                                                       |
 

@@ -1,5 +1,6 @@
-// Auto-detection of local gateway and ISP first hop. Linux-only; on other
-// OSes detection returns an error and the caller skips injection.
+// Auto-detection of local gateway and ISP first hop. Linux-first; on
+// other OSes (or when /proc/net/route / unprivileged ICMP isn't
+// available) detection returns an error and the caller skips injection.
 package probe
 
 import (
@@ -10,9 +11,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
 )
 
 // DefaultGateway returns the IPv4 default gateway from /proc/net/route.
@@ -43,35 +46,83 @@ func DefaultGateway() (string, error) {
 	return "", errors.New("no default route in /proc/net/route")
 }
 
-// FirstHopBeyondGateway runs a brief traceroute to anchor and returns hop
-// 2's IP — the first router past your local gateway, typically the ISP's
-// edge. Requires the `traceroute` binary in PATH; works without root via
-// the default UDP probe mode on Linux.
+// FirstHopBeyondGateway returns the IP of hop 2 on the path to anchor —
+// the first router past your local gateway, typically the ISP edge.
+//
+// Implementation: send one ICMP Echo with TTL=2 over an unprivileged
+// ICMP datagram socket (the same SOCK_DGRAM/IPPROTO_ICMP path used by
+// pro-bing for our regular probes). Hop 2 replies with ICMP Time
+// Exceeded; the kernel demuxes that to our socket via the embedded
+// original packet's ICMP id, so no raw socket / CAP_NET_RAW required.
+//
+// Requires net.ipv4.ping_group_range to permit our gid — same precondition
+// as ping-lens's normal probes when probe.privileged is false.
 func FirstHopBeyondGateway(ctx context.Context, anchor string, timeout time.Duration) (string, error) {
-	if _, err := exec.LookPath("traceroute"); err != nil {
-		return "", fmt.Errorf("traceroute binary not in PATH")
-	}
 	if anchor == "" {
 		anchor = "1.1.1.1"
 	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	// -n no DNS, -q 1 one probe per hop, -m 3 max 3 hops, -w 2 wait 2s.
-	cmd := exec.CommandContext(cctx, "traceroute", "-n", "-q", "1", "-m", "3", "-w", "2", anchor)
-	out, err := cmd.Output()
+	dst, err := net.ResolveIPAddr("ip4", anchor)
 	if err != nil {
-		return "", fmt.Errorf("traceroute: %w", err)
+		return "", fmt.Errorf("resolve anchor %q: %w", anchor, err)
 	}
-	for _, line := range strings.Split(string(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[0] != "2" {
-			continue
-		}
-		ip := fields[1]
-		if ip == "*" || net.ParseIP(ip) == nil {
-			return "", errors.New("hop 2 did not respond")
-		}
-		return ip, nil
+
+	conn, err := icmp.ListenPacket("udp4", "0.0.0.0")
+	if err != nil {
+		return "", fmt.Errorf("open unprivileged icmp socket: %w", err)
 	}
-	return "", errors.New("no hop 2 in traceroute output")
+	defer conn.Close()
+
+	if err := conn.IPv4PacketConn().SetTTL(2); err != nil {
+		return "", fmt.Errorf("set ttl: %w", err)
+	}
+
+	msg := icmp.Message{
+		Type: ipv4.ICMPTypeEcho,
+		Code: 0,
+		Body: &icmp.Echo{
+			// id is overwritten by the kernel for SOCK_DGRAM ICMP — set
+			// to a stable value anyway for self-documentation.
+			ID:   os.Getpid() & 0xffff,
+			Seq:  1,
+			Data: []byte("ping-lens-trace"),
+		},
+	}
+	wb, err := msg.Marshal(nil)
+	if err != nil {
+		return "", fmt.Errorf("marshal echo: %w", err)
+	}
+
+	// Honour both the explicit timeout and the caller's ctx deadline,
+	// whichever is sooner.
+	deadline := time.Now().Add(timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		return "", err
+	}
+
+	if _, err := conn.WriteTo(wb, &net.UDPAddr{IP: dst.IP}); err != nil {
+		return "", fmt.Errorf("send echo: %w", err)
+	}
+
+	rb := make([]byte, 1500)
+	n, peer, err := conn.ReadFrom(rb)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+	rm, err := icmp.ParseMessage(1 /* iana.ProtocolICMP */, rb[:n])
+	if err != nil {
+		return "", fmt.Errorf("parse icmp: %w", err)
+	}
+	switch rm.Type {
+	case ipv4.ICMPTypeTimeExceeded, ipv4.ICMPTypeEchoReply:
+		// peer is *net.UDPAddr because we used "udp4" as the network.
+		if udp, ok := peer.(*net.UDPAddr); ok {
+			return udp.IP.String(), nil
+		}
+		return peer.String(), nil
+	default:
+		return "", fmt.Errorf("unexpected icmp type %v from %v", rm.Type, peer)
+	}
 }
