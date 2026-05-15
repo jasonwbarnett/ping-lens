@@ -38,7 +38,11 @@ flush:
   spool_flush_seconds: 60
 
 rollup:
-  window_minutes: 30
+  # Bucket size for the in-memory aggregator that feeds ping_rollups.
+  # Smaller windows = finer chart resolution for medium/long views, but
+  # more rows in Postgres. Short views (1h, 24h) bypass rollups entirely
+  # and aggregate raw ping_samples on the fly, so this only affects 7d/30d.
+  window_minutes: 5
 
 retention:
   raw_days: 14

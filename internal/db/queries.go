@@ -111,6 +111,73 @@ WHERE bucket >= $1 AND bucket < $2
 	return out, rows.Err()
 }
 
+// SampleAggregates groups raw ping_samples into bucketSeconds-wide buckets
+// and returns rows in the same shape as Rollups(), so the dashboard chart
+// code can consume them interchangeably. Use this for short windows where
+// 30-min rollups would yield too few points (or where you want sharper
+// detail than the rollup table provides for the still-open bucket).
+//
+// Percentiles use percentile_cont, matching the rollup accumulator's
+// linear-interpolation definition closely enough for chart purposes.
+func (s *Store) SampleAggregates(ctx context.Context, since, until time.Time, source string, bucketSeconds int) ([]RollupRow, error) {
+	if bucketSeconds <= 0 {
+		bucketSeconds = 60
+	}
+	q := `
+SELECT
+  to_timestamp(floor(extract(epoch from ts)::bigint / $3) * $3) AT TIME ZONE 'UTC' AS bucket,
+  $3                                                AS window_seconds,
+  source,
+  COALESCE(MAX(isp_name), '')                       AS isp_name,
+  target,
+  COALESCE(MAX(target_group), '')                   AS target_group,
+  COUNT(*)                                          AS samples,
+  COUNT(*) FILTER (WHERE NOT ping_success)          AS ping_failures,
+  COUNT(*) FILTER (WHERE dns_success IS FALSE)      AS dns_failures,
+  100.0 * COUNT(*) FILTER (WHERE NOT ping_success)
+        / NULLIF(COUNT(*), 0)                       AS loss_pct,
+  COALESCE(100.0 * COUNT(*) FILTER (WHERE dns_success IS FALSE)
+                 / NULLIF(COUNT(*) FILTER (WHERE dns_success IS NOT NULL), 0), 0) AS dns_failure_pct,
+  COALESCE(percentile_cont(0.50) WITHIN GROUP (ORDER BY latency_ms), 0) AS p50_ms,
+  COALESCE(percentile_cont(0.90) WITHIN GROUP (ORDER BY latency_ms), 0) AS p90_ms,
+  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms), 0) AS p95_ms,
+  COALESCE(percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms), 0) AS p99_ms,
+  COALESCE(MIN(latency_ms), 0)                      AS min_ms,
+  COALESCE(MAX(latency_ms), 0)                      AS max_ms,
+  COALESCE(AVG(latency_ms), 0)                      AS avg_ms
+FROM ping_samples
+WHERE ts >= $1 AND ts < $2
+`
+	args := []any{since, until, bucketSeconds}
+	if source != "" {
+		q += " AND source = $4"
+		args = append(args, source)
+	}
+	q += `
+GROUP BY 1, source, target
+ORDER BY 1 ASC, source, target`
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RollupRow
+	for rows.Next() {
+		var r RollupRow
+		if err := rows.Scan(
+			&r.Bucket, &r.WindowSeconds, &r.Source, &r.ISPName, &r.Target,
+			&r.TargetGroup, &r.Samples, &r.PingFailures, &r.DNSFailures,
+			&r.LossPct, &r.DNSFailurePct,
+			&r.P50MS, &r.P90MS, &r.P95MS, &r.P99MS,
+			&r.MinMS, &r.MaxMS, &r.AvgMS,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Outages returns outage events overlapping the window.
 func (s *Store) Outages(ctx context.Context, since, until time.Time, source string) ([]OutageRow, error) {
 	q := `

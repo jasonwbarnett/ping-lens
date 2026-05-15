@@ -159,7 +159,7 @@ func applyDefaults(c *Config) {
 		c.Flush.SpoolFlushSeconds = 60
 	}
 	if c.Rollup.WindowMinutes == 0 {
-		c.Rollup.WindowMinutes = 30
+		c.Rollup.WindowMinutes = 5
 	}
 	if c.Retention.RawDays == 0 {
 		c.Retention.RawDays = 14

@@ -69,8 +69,11 @@ reverse proxy + auth before exposing it on the LAN.
 
 ### Storage
 
-- `ping_samples` — every raw probe; default retention 14 days.
-- `ping_rollups` — 30-minute aggregates with p50/p90/p95/p99; 1-year retention.
+- `ping_samples` — every raw probe; default retention 14 days. Also queried
+  on-the-fly to drive the chart for short windows (1h, 24h,
+  evening_peak), bucketed at 1-min / 5-min / 1-min granularity.
+- `ping_rollups` — N-minute aggregates with p50/p90/p95/p99; 1-year
+  retention. `rollup.window_minutes` defaults to 5.
 - `outage_events` — classified outage start/end records.
 - `loaded_latency_tests` — table reserved for post-MVP loaded-latency runs.
 

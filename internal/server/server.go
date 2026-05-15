@@ -99,6 +99,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		httpError(w, "load outages", err)
 		return
 	}
+	chartRows, err := s.chartRows(ctx, winKey, since, until, "", rollups)
+	if err != nil {
+		httpError(w, "load chart rows", err)
+		return
+	}
 
 	bySource, perTarget := grade.Summarize(rollups, outages)
 	sources := sortedSources(bySource)
@@ -118,14 +123,34 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	switch mode {
 	case "single_isp":
-		s.renderSingle(w, base, sources, rollups, outages, perTarget)
+		s.renderSingle(w, base, sources, rollups, chartRows, outages, perTarget)
 	case "multi_isp":
-		s.renderMulti(w, base, sources, rollups, outages, perTarget)
+		s.renderMulti(w, base, sources, rollups, chartRows, outages, perTarget)
 	default:
 		// Empty: no data yet.
 		base.Title = "ping-lens"
 		s.renderEmpty(w, base)
 	}
+}
+
+// chartRows returns the bucketed rows that drive the time-series charts.
+// For short windows (1h, 24h) we aggregate raw ping_samples on the fly so
+// the chart isn't limited by the rollup window size and includes the
+// still-open bucket. For longer windows we fall back to the rollup table.
+func (s *Server) chartRows(ctx context.Context, winKey string, since, until time.Time, source string, fallback []db.RollupRow) ([]db.RollupRow, error) {
+	bucketSec := 0
+	switch winKey {
+	case "1h":
+		bucketSec = 60 // 1-min buckets -> ~60 points
+	case "24h":
+		bucketSec = 300 // 5-min buckets -> ~288 points
+	case "evening_peak":
+		bucketSec = 60 // 4 hours x 60 = 240 points
+	}
+	if bucketSec == 0 {
+		return fallback, nil
+	}
+	return s.store.SampleAggregates(ctx, since, until, source, bucketSec)
 }
 
 func (s *Server) detectMode(sources []*grade.SourceStats) string {
@@ -159,7 +184,7 @@ func (s *Server) renderEmpty(w http.ResponseWriter, base pageBase) {
 	}
 }
 
-func (s *Server) renderSingle(w http.ResponseWriter, base pageBase, sources []*grade.SourceStats, rollups []db.RollupRow, outages []db.OutageRow, perTarget []grade.PerTargetStats) {
+func (s *Server) renderSingle(w http.ResponseWriter, base pageBase, sources []*grade.SourceStats, _ []db.RollupRow, chartRows []db.RollupRow, outages []db.OutageRow, perTarget []grade.PerTargetStats) {
 	stats := sources[0]
 	overall := grade.Grade(stats, s.cfg.Thresholds)
 	reasons := grade.GradeReasons(stats, s.cfg.Thresholds)
@@ -168,7 +193,7 @@ func (s *Server) renderSingle(w http.ResponseWriter, base pageBase, sources []*g
 	sourceOutages := filterOutagesBySource(outages, stats.Source)
 	sourcePerTarget := filterPerTargetBySource(perTarget, stats.Source)
 
-	latencyJSON, lossJSON := buildSingleSeriesJSON(rollups, stats.Source)
+	latencyJSON, lossJSON := buildSingleSeriesJSON(chartRows, stats.Source)
 
 	base.Title = stats.Source
 	page := singlePage{
@@ -185,10 +210,10 @@ func (s *Server) renderSingle(w http.ResponseWriter, base pageBase, sources []*g
 	_ = renderWithContent(s.tpl, w, "single", page)
 }
 
-func (s *Server) renderMulti(w http.ResponseWriter, base pageBase, sources []*grade.SourceStats, rollups []db.RollupRow, _ []db.OutageRow, perTarget []grade.PerTargetStats) {
+func (s *Server) renderMulti(w http.ResponseWriter, base pageBase, sources []*grade.SourceStats, _ []db.RollupRow, chartRows []db.RollupRow, _ []db.OutageRow, perTarget []grade.PerTargetStats) {
 	winner := pickBestWinner(sources, perTarget)
 
-	latencyJSON, lossJSON := buildMultiSeriesJSON(rollups)
+	latencyJSON, lossJSON := buildMultiSeriesJSON(chartRows)
 	base.Title = "Compare ISPs"
 	page := multiPage{
 		pageBase:         base,
